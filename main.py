@@ -21,19 +21,19 @@ if (args.download or not pathlib.Path('data.pkl').exists()):
         symbols = [line.strip().replace('.', '-') \
             for line in tickers]
 
-    prices = yf.download(symbols, period='3y')
-    prices.to_pickle('data.pkl')
-    prices.to_excel('data.xlsx')
+    data = yf.download(symbols, period='3y')
+    data.to_pickle('data.pkl')
+    data.to_excel('data.xlsx')
 
-prices = pd.read_pickle('data.pkl')
+data = pd.read_pickle('data.pkl')
 # We only care about the close price
-prices = prices.drop(columns=['Open', 'Volume', 'Low', 'High'])
-pct_change = prices['Close'].pct_change()
+data = data.drop(columns=['Open', 'Volume', 'Low', 'High'])
+data = data['Close'].pct_change()
 
 def simple_annualized_sortino(series):
     n = series.count()
     mean = series.mean() - args.rfr / 252
-    down_devs = series.clip(upper=0) - mean
+    down_devs = (series - args.rfr).clip(upper=0)
     down_stdev = math.sqrt((down_devs ** 2).sum() / (n - 1))
 
     return mean * math.sqrt(252) / down_stdev
@@ -41,17 +41,18 @@ def simple_annualized_sortino(series):
 def log_annualized_sortino(series):
     log_returns = np.log(1 + series)
     n = log_returns.count()
-    mean = log_returns.mean() - math.log(1 + args.rfr) / 252
-    # print(f'name: {series.name} mean: {str(mean)} n: {n}')
+    log_daily_rfr = math.log(1 + args.rfr) / 252
+    mean = log_returns.mean() - log_daily_rfr
 
-    down_devs = series.clip(upper=0) - mean
+    # print(f'name: {series.name} mean: {str(mean)} n: {n}')
+    down_devs = (series - log_daily_rfr).clip(upper=0)
     down_stdev = math.sqrt((down_devs ** 2).sum() / (n - 1))
     return mean * math.sqrt(252) / down_stdev
     
-simple_annualized = pct_change.agg(simple_annualized_sortino)
-log_annualized = pct_change.agg(log_annualized_sortino)
+simple_annualized = data.agg(simple_annualized_sortino)
+log_annualized = data.agg(log_annualized_sortino)
 df = pd.concat([simple_annualized, log_annualized], axis=1)
 df.columns = ['Simple', 'Log']
 
-df = df.sort_values('Log', ascending=False)
+df = df.sort_values('Simple', ascending=False)
 df.to_excel('sortinos.xlsx')
