@@ -6,6 +6,8 @@ import math
 import numpy as np
 import argparse
 import pathlib
+import sortino
+import sharpe
 
 parser = argparse.ArgumentParser(description='Sortino 500')
 parser.add_argument('--rfr',
@@ -15,6 +17,7 @@ parser.add_argument('--download', action='store_true',
     help='Try to download new data as of today')
 
 args = parser.parse_args()
+sortino.rfr = args.rfr
 
 if (args.download or not pathlib.Path('data.pkl').exists()):
     with open('tickers.txt', 'r') as tickers:
@@ -30,29 +33,14 @@ data = pd.read_pickle('data.pkl')
 data = data.drop(columns=['Open', 'Volume', 'Low', 'High'])
 data = data['Close'].pct_change()
 
-def simple_annualized_sortino(series):
-    n = series.count()
-    mean = series.mean() - args.rfr / 252
-    down_devs = (series - args.rfr).clip(upper=0)
-    down_stdev = math.sqrt((down_devs ** 2).sum() / (n - 1))
+# Combine into dataframe with MultiIndex columns
+df = pd.DataFrame({
+    ('Sharpe', 'Simple'): data.agg(sharpe.simple_annualized),
+    ('Sharpe', 'Log'): data.agg(sharpe.log_annualized)
+    ('Sortino', 'Simple'): data.agg(sortino.simple_annualized),
+    ('Sortino', 'Log'): data.agg(sortino.log_annualized),
+})
 
-    return mean * math.sqrt(252) / down_stdev
-
-def log_annualized_sortino(series):
-    log_returns = np.log(1 + series)
-    n = log_returns.count()
-    log_daily_rfr = math.log(1 + args.rfr) / 252
-    mean = log_returns.mean() - log_daily_rfr
-
-    # print(f'name: {series.name} mean: {str(mean)} n: {n}')
-    down_devs = (series - log_daily_rfr).clip(upper=0)
-    down_stdev = math.sqrt((down_devs ** 2).sum() / (n - 1))
-    return mean * math.sqrt(252) / down_stdev
-    
-simple_annualized = data.agg(simple_annualized_sortino)
-log_annualized = data.agg(log_annualized_sortino)
-df = pd.concat([simple_annualized, log_annualized], axis=1)
-df.columns = ['Simple', 'Log']
-
-df = df.sort_values('Simple', ascending=False)
-df.to_excel('sortinos.xlsx')
+df.columns = pd.MultiIndex.from_tuples(df.columns)
+df = df.sort_values(('Sharpe', 'Log'), ascending=False)
+df.to_excel('ratios.xlsx')
