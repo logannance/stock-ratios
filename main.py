@@ -2,12 +2,12 @@
 # 2026-03-30 covering 3 years of daily adjusted close data.
 import yfinance as yf
 import pandas as pd
-import math
 import numpy as np
 import argparse
 import pathlib
 import sortino
 import sharpe
+import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser(description='Sortino 500')
 parser.add_argument('--rfr',
@@ -33,12 +33,19 @@ data = pd.read_pickle('data.pkl')
 data = data.drop(columns=['Open', 'Volume', 'Low', 'High'])
 data = data['Close'].pct_change()
 
+log_sharpe = data.agg(sharpe.log_annualized)
+
+top_ten_log_sharpe = log_sharpe.nlargest(20)
+top_ten_log_sharpe = top_ten_log_sharpe.sort_values(ascending=False)
+top_ten_log_sharpe.plot.bar()
+plt.show()
+
 # Combine into dataframe with MultiIndex columns
 df = pd.DataFrame({
     ('Sharpe', 'Simple'): data.agg(sharpe.simple_annualized),
-    ('Sharpe', 'Log'): data.agg(sharpe.log_annualized)
-    ('Sortino', 'Simple'): data.agg(sortino.simple_annualized),
-    ('Sortino', 'Log'): data.agg(sortino.log_annualized),
+    ('Sharpe', 'Log'): log_sharpe,
+    ('Sortino', 'Simple',): data.agg(sortino.simple_annualized),
+    ('Sortino', 'Log'): data.agg(sortino.log_annualized)
 })
 
 df.columns = pd.MultiIndex.from_tuples(df.columns)
